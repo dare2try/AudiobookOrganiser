@@ -1,5 +1,7 @@
 ﻿using AudiobookOrganiser.Business.Tasks;
+using CommandLine;
 using System;
+using System.Collections.Generic;
 using System.Configuration;
 using System.IO;
 using System.Linq;
@@ -11,47 +13,22 @@ namespace AudiobookOrganiser
 {
     internal class Program
     {
-        private static void Main(string[] args)
+        public class Options
         {
-            ConsoleEx.WriteColouredLine(ConsoleColor.Green, "--------------------------------------");
-            ConsoleEx.WriteColouredLine(ConsoleColor.Green, "- Audiobook Organiser -");
-            ConsoleEx.WriteColouredLine(ConsoleColor.Green, "--------------------------------------");
+            [Option("audible-sync-only", Required = false, HelpText = "Sync your files from audible.")]
+            public bool AudibleSyncOnly { get; set; }
 
-            CleanUpTempFiles();
+            [Option('l', "library-root", Required = false, HelpText = "Add a library root path.")]
+            public IEnumerable<string> LibraryRootPaths { get; set; }
 
-            if (args.Contains("-audible-sync"))
-            {
-                SyncFromAudibleCli.Run();
-                CheckForCorruptedFiles.Run();
-                ConsoleEx.WriteColoured(ConsoleColor.Green, "\n\nDONE!");
-            }
-            else if (args.Contains("-update-tags-only"))
-            {
-                CheckAndRewriteTags.Run();
-                CheckForCorruptedFiles.Run();
-                ConsoleEx.WriteColoured(ConsoleColor.Green, "\n\nDONE!");
-            }
-            else
-            {
-                foreach (var library in LibraryRootPaths)
-                {
-                    ConsoleEx.WriteColouredLine(ConsoleColor.Cyan, $"\n\nLIBRARY {library}\n\n");
-                    ReorganiseFilesAlreadyInLibrary.Run(library);
-                }
+            [Option('o', "output-dir", Required = false, HelpText = "Output directory for organized files.")]
+            public string OutputDirectoryName { get; set; }
 
-                SyncFromOpenAudibleDownloads.Run();
-                ConvertExistingMp3ToM4b.Run();
-                CheckAndRewriteTags.Run();
-                CheckForCorruptedFiles.Run();
+            [Option("organise-only", Required = false, HelpText = "Organize your files.")]
+            public bool OrganiseOnly { get; set; }
 
-                ConsoleEx.WriteColoured(ConsoleColor.Green, "\n\nDONE!");
-
-                // Give time to see output before closing console
-                Thread.Sleep(3000);
-            }
-
-            Thread.Sleep(1000);
-            CleanUpTempFiles();
+            [Option("update-tags-only", Required = false, HelpText = "Sync your files from audible.")]
+            public bool UpdateTagsOnly { get; set; }
         }
 
         internal static string[] LibraryRootPaths { get; set; }
@@ -116,6 +93,78 @@ namespace AudiobookOrganiser
             }
         }
 
+        private static void Main(string[] args)
+        {
+            CommandLine.Parser.Default.ParseArguments<Options>(args)
+              .WithParsed(RunOptions)
+              .WithNotParsed(HandleParseError);
+        }
+
+        static void RunOptions(Options opts)
+        {
+            ConsoleEx.WriteColouredLine(ConsoleColor.Green, "--------------------------------------");
+            ConsoleEx.WriteColouredLine(ConsoleColor.Green, "- Audiobook Organiser -");
+            ConsoleEx.WriteColouredLine(ConsoleColor.Green, "--------------------------------------");
+
+            OverrideConfigWithCliOptions(opts);
+            CleanUpTempFiles();
+
+            if (opts.AudibleSyncOnly)
+            {
+                SyncFromAudibleCli.Run();
+                CheckForCorruptedFiles.Run();
+                ConsoleEx.WriteColoured(ConsoleColor.Green, "\n\nDONE!");
+            }
+            else if (opts.UpdateTagsOnly)
+            {
+                CheckAndRewriteTags.Run();
+                CheckForCorruptedFiles.Run();
+                ConsoleEx.WriteColoured(ConsoleColor.Green, "\n\nDONE!");
+            }
+            else if (opts.OrganiseOnly)
+            {
+                foreach (var library in opts.LibraryRootPaths)
+                {
+                    ConsoleEx.WriteColouredLine(ConsoleColor.Cyan, $"\n\nLIBRARY {library}\n\n");
+                    ReorganiseFilesAlreadyInLibrary.Run(library);
+                }
+            }
+            else
+            {
+                foreach (var library in opts.LibraryRootPaths)
+                {
+                    ConsoleEx.WriteColouredLine(ConsoleColor.Cyan, $"\n\nLIBRARY {library}\n\n");
+                    ReorganiseFilesAlreadyInLibrary.Run(library);
+                }
+
+                SyncFromOpenAudibleDownloads.Run();
+                ConvertExistingMp3ToM4b.Run();
+                CheckAndRewriteTags.Run();
+                CheckForCorruptedFiles.Run();
+
+                ConsoleEx.WriteColoured(ConsoleColor.Green, "\n\nDONE!");
+
+                // Give time to see output before closing console
+                Thread.Sleep(3000);
+            }
+
+            Thread.Sleep(1000);
+            CleanUpTempFiles();
+        }
+
+        private static void OverrideConfigWithCliOptions(Options opts)
+        {
+            if (opts.LibraryRootPaths != null)
+            {
+                LibraryRootPaths = opts.LibraryRootPaths.ToArray<string>();
+            }
+
+            if (opts.OutputDirectoryName != null)
+            {
+                OutputDirectoryName = opts.OutputDirectoryName;
+            }
+        }
+
         private static void CleanUpTempFiles()
         {
             try
@@ -136,6 +185,12 @@ namespace AudiobookOrganiser
                 Directory.Delete(Path.Combine(Path.GetTempPath(), "AudioBookOrganiser"), true);
             }
             catch { }
+        }
+
+        static void HandleParseError(IEnumerable<Error> errs)
+        {
+            //handle errors
+            Console.WriteLine("Error parsing commands:" + errs.ToArray());
         }
     }
 }
